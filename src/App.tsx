@@ -1,59 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   itemTypes,
   type ItemInput,
   type ItemType,
   type LibraryItem,
 } from "./lib/types";
-import { deleteItem, listItems, saveItem } from "./lib/items";
+import { deleteItem, saveItem } from "./lib/items";
+import { db } from "./lib/db";
+import { retryOcr } from "./lib/ocr-store";
+import { useLibrary } from "./hooks/use-library";
+import { useOcr } from "./hooks/use-ocr";
+import { useSearch } from "./hooks/use-search";
 import ItemForm from "./components/ItemForm";
 import ItemList from "./components/ItemList";
 import { symbols } from "./lib/types";
 import ItemDetails from "./components/ItemDetails";
 export default function App() {
-  const [items, setItems] = useState<LibraryItem[]>([]);
+  const { items, loading, error: storageError, reload } = useLibrary();
+  const ocrError = useOcr();
   const [filter, setFilter] = useState<ItemType | "all">("all");
   const [selected, setSelected] = useState<LibraryItem>();
   const [mode, setMode] = useState<"view" | "add" | "edit">("view");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [storage, setStorage] = useState("");
+  const [query, setQuery] = useState("");
+  const [tag, setTag] = useState("");
+  const search = useSearch(items, { text: query, type: filter, tag });
   const lock = useRef(false);
   const panel = useRef<HTMLElement>(null);
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setItems(await listItems());
-    } catch {
-      setError(
-        "Unable to read local storage. Check browser storage permissions and retry.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    let active = true;
-    listItems()
-      .then((items) => {
-        if (active) setItems(items);
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "Unable to read local storage. Check browser storage permissions and retry.",
-          );
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  // Keep the editor's selected snapshot stable. Live updates only replace the view,
+  // never the ItemForm key or its local draft state.
+  const viewedItem = selected
+    ? items.find((item) => item.id === selected.id)
+    : undefined;
   useEffect(() => {
     if (mode !== "view" || selected) panel.current?.focus();
   }, [mode, selected]);
@@ -68,10 +49,6 @@ export default function App() {
         image,
         mode === "edit" ? selected?.id : undefined,
       );
-      setItems((current) => [
-        result,
-        ...current.filter((item) => item.id !== result.id),
-      ]);
       setSelected(result);
       setMode("view");
       setStatus("Saved to your local library.");
@@ -96,7 +73,6 @@ export default function App() {
     setError("");
     try {
       await deleteItem(selected.id);
-      setItems((current) => current.filter((item) => item.id !== selected.id));
       setSelected(undefined);
       setStatus("Item deleted.");
     } catch {
@@ -106,7 +82,12 @@ export default function App() {
       setBusy(false);
     }
   }
-  const visible = items.filter((i) => filter === "all" || i.type === filter);
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const visible = search.hits
+    .map((hit) => byId.get(hit.id))
+    .filter((item): item is LibraryItem => !!item);
+  const snippets = new Map(search.hits.map((hit) => [hit.id, hit.snippet]));
+  const tags = [...new Set(items.flatMap((item) => item.tags))].sort();
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -192,32 +173,80 @@ export default function App() {
             ＋ Add item
           </button>
         </header>
+        <div className="search-bar">
+          <label>
+            Search your library
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search titles, text, tags, links, and image text…"
+            />
+          </label>
+          <label>
+            Tag
+            <select value={tag} onChange={(e) => setTag(e.target.value)}>
+              <option value="">All tags</option>
+              {tag && !tags.includes(tag) && <option value={tag}>{tag}</option>}
+              {tags.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          </label>
+          {(query || tag) && (
+            <button
+              className="quiet"
+              onClick={() => {
+                setQuery("");
+                setTag("");
+              }}
+            >
+              Clear search
+            </button>
+          )}
+        </div>
         <div className="collection-bar">
           <span>
             {visible.length} {visible.length === 1 ? "item" : "items"}
           </span>
-          <span>Recently updated first</span>
+          <span>
+            {query.trim() ? "Best matches first" : "Recently updated first"}
+          </span>
         </div>
         {status && (
           <p className="success" role="status">
             {status}
           </p>
         )}
-        {error && (
+        {(error || storageError || ocrError || search.error) && (
           <div className="error" role="alert">
-            {error}
-            <button onClick={() => void reload()}>Retry</button>
+            {error || storageError || ocrError || search.error}
+            {storageError && (
+              <button
+                onClick={() => {
+                  setError("");
+                  reload();
+                }}
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
         <div
           className={`workspace ${mode !== "view" || selected ? "with-panel" : ""}`}
         >
           <section aria-label="Saved items">
-            {loading ? (
-              <p role="status">Loading your library…</p>
+            {loading || search.searching ? (
+              <p role="status">
+                {loading ? "Loading your library…" : "Searching your library…"}
+              </p>
             ) : visible.length ? (
               <ItemList
                 items={visible}
+                snippets={snippets}
                 selected={selected?.id}
                 onSelect={(item) => {
                   if (!busy) {
@@ -232,14 +261,18 @@ export default function App() {
                   ▧ <span>✎</span>
                 </div>
                 <h2>
-                  {items.length
-                    ? "Nothing here yet"
-                    : "A home for your good finds"}
+                  {query || tag
+                    ? "No matching items"
+                    : items.length
+                      ? "Nothing here yet"
+                      : "A home for your good finds"}
                 </h2>
                 <p>
-                  Save a screenshot, a useful link, a piece of text,
+                  {query || tag
+                    ? "Try different words or clear your filters."
+                    : "Save a screenshot, a useful link, a piece of text,"}
                   <br />
-                  or a thought you want to keep.
+                  {!query && !tag && "or a thought you want to keep."}
                 </p>
                 <button
                   className="primary"
@@ -262,14 +295,30 @@ export default function App() {
               aria-label={mode === "view" ? "Selected item" : "Item editor"}
             >
               {mode === "view" && selected ? (
-                <ItemDetails
-                  key={selected.id}
-                  item={selected}
-                  busy={busy}
-                  onEdit={() => setMode("edit")}
-                  onDelete={() => void remove()}
-                  onClose={() => setSelected(undefined)}
-                />
+                viewedItem ? (
+                  <ItemDetails
+                    key={selected.id}
+                    item={viewedItem}
+                    busy={busy}
+                    onEdit={() => setMode("edit")}
+                    onDelete={() => void remove()}
+                    onClose={() => setSelected(undefined)}
+                    onRetryOcr={() => {
+                      void retryOcr(selected.id, db).catch(() =>
+                        setError(
+                          "Could not queue OCR. Check local storage and retry.",
+                        ),
+                      );
+                    }}
+                  />
+                ) : (
+                  <p>
+                    This item was deleted.{" "}
+                    <button onClick={() => setSelected(undefined)}>
+                      Close
+                    </button>
+                  </p>
+                )
               ) : (
                 <ItemForm
                   key={mode + (selected?.id ?? "")}

@@ -9,7 +9,22 @@ export interface LibraryItem {
   url: string;
   createdAt: number;
   updatedAt: number;
+  ocr?: OcrData;
 }
+export interface OcrData {
+  status: "pending" | "processing" | "completed" | "failed";
+  text: string;
+  language: "eng";
+  jobId: string;
+  completedAt?: number;
+  error?: string;
+}
+export const pendingOcr = (): OcrData => ({
+  status: "pending",
+  text: "",
+  language: "eng",
+  jobId: crypto.randomUUID(),
+});
 export interface ItemInput {
   type: ItemType;
   title: string;

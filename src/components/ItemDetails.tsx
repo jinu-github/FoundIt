@@ -7,12 +7,14 @@ export default function ItemDetails({
   onEdit,
   onDelete,
   onClose,
+  onRetryOcr,
 }: {
   item: LibraryItem;
   busy: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onRetryOcr: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
   return (
@@ -40,6 +42,43 @@ export default function ItemDetails({
         </a>
       )}
       {item.textContent && <p className="saved-text">{item.textContent}</p>}
+      {item.ocr && (
+        <section className="ocr-panel" aria-label="Image text">
+          <h3>
+            Extracted text{" "}
+            <span className={`ocr-badge ${item.ocr.status}`}>
+              {item.ocr.status}
+            </span>
+          </h3>
+          {item.ocr.status === "pending" && (
+            <p role="status">Waiting for local text extraction…</p>
+          )}
+          {item.ocr.status === "processing" && (
+            <p role="status">
+              Processing on this device. You can keep using your library.
+            </p>
+          )}
+          {item.ocr.status === "completed" && (
+            <>
+              <p className="saved-text">
+                {item.ocr.text || "No text detected."}
+              </p>
+              <small>
+                English OCR can make mistakes. Add notes or tags to keep this
+                image findable.
+              </small>
+            </>
+          )}
+          {item.ocr.status === "failed" && (
+            <>
+              <p>{item.ocr.error}</p>
+              <button disabled={busy} onClick={onRetryOcr}>
+                Retry OCR
+              </button>
+            </>
+          )}
+        </section>
+      )}
       <div className="tags">
         {item.tags.map((tag) => (
           <span key={tag}>#{tag}</span>

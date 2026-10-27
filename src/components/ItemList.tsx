@@ -5,10 +5,12 @@ export default function ItemList({
   items,
   onSelect,
   selected,
+  snippets,
 }: {
   items: LibraryItem[];
   onSelect: (item: LibraryItem) => void;
   selected?: string;
+  snippets?: Map<string, string>;
 }) {
   return (
     <div className="item-grid">
@@ -26,11 +28,20 @@ export default function ItemList({
             <div className={`item-icon ${item.type}`}>{symbols[item.type]}</div>
           )}
           <span className="eyebrow">{item.type}</span>
+          {item.ocr && (
+            <span className={`ocr-badge ${item.ocr.status}`}>
+              OCR: {item.ocr.status}
+            </span>
+          )}
           <h2>{item.title}</h2>
           <p className="snippet">
-            {item.textContent ||
+            {(
+              snippets?.get(item.id) ||
+              item.textContent ||
+              item.ocr?.text ||
               item.url ||
-              "Image saved locally. Open to view."}
+              "Image saved locally. Open to view."
+            ).slice(0, 182)}
           </p>
           <div className="tags">
             {item.tags.slice(0, 3).map((tag) => (

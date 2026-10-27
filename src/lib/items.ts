@@ -1,5 +1,6 @@
 import { db, type LibraryDB } from "./db";
 import type { ItemInput, LibraryItem } from "./types";
+import { pendingOcr } from "./types";
 import { normalizeInput, validateImage } from "./validation";
 export async function saveItem(
   input: ItemInput,
@@ -30,6 +31,9 @@ export async function saveItem(
         id: key,
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
+        ...(clean.type === "image"
+          ? { ocr: image ? pendingOcr() : (previous?.ocr ?? pendingOcr()) }
+          : {}),
       };
       await database.items.put(item);
       if (image) await database.images.put({ id: key, blob: image });

@@ -3,9 +3,79 @@ import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { db } from "./lib/db";
+import { LibrarySearch, type SearchQuery } from "./lib/search";
+import type { LibraryItem } from "./lib/types";
+import { saveItem } from "./lib/items";
+vi.mock("./hooks/use-ocr", () => ({ useOcr: () => "" }));
+class SearchWorkerMock {
+  index = new LibrarySearch();
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onerror = null;
+  terminated = false;
+  postMessage(message: {
+    version: number;
+    items?: LibraryItem[];
+    query: SearchQuery;
+  }) {
+    if (message.items) this.index.sync(message.items);
+    queueMicrotask(() => {
+      if (!this.terminated)
+        this.onmessage?.({
+          data: {
+            version: message.version,
+            hits: this.index.search(message.query),
+          },
+        });
+    });
+  }
+  terminate() {
+    this.terminated = true;
+  }
+}
 beforeEach(async () => {
+  vi.stubGlobal("Worker", SearchWorkerMock);
   await db.items.clear();
   await db.images.clear();
+});
+it("keeps an unsaved draft when OCR completes and searches the saved result", async () => {
+  const item = await saveItem(
+    {
+      type: "image",
+      title: "Image",
+      textContent: "Original",
+      tags: [],
+      url: "",
+    },
+    new Blob(["x"], { type: "image/png" }),
+  );
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, {
+      createObjectURL: () => "blob:test",
+      revokeObjectURL: () => {},
+    }),
+  );
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: /OCR: pending Image Original/i }));
+  await user.click(screen.getByRole("button", { name: "Edit item" }));
+  await user.clear(screen.getByLabelText("Title"));
+  await user.type(screen.getByLabelText("Title"), "My unsaved title");
+  await db.items.update(item.id, {
+    ocr: { ...item.ocr!, status: "completed", text: "quartz lighthouse" },
+  });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Title")).toHaveValue("My unsaved title"),
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByRole("button", { name: "Edit item" });
+  expect((await db.items.get(item.id))?.ocr?.text).toBe("quartz lighthouse");
+  await user.type(screen.getByRole("searchbox"), "lighthouse");
+  expect(
+    await screen.findByRole("button", {
+      name: /My unsaved title quartz lighthouse/,
+    }),
+  ).toBeInTheDocument();
 });
 it("creates, edits, reloads, and deletes a note through the UI", async () => {
   const user = userEvent.setup();

@@ -1,5 +1,6 @@
 import Dexie, { type Table } from "dexie";
 import type { LibraryItem, ImageRecord } from "./types";
+import { pendingOcr } from "./types";
 export class LibraryDB extends Dexie {
   items!: Table<LibraryItem, string>;
   images!: Table<ImageRecord, string>;
@@ -9,6 +10,16 @@ export class LibraryDB extends Dexie {
       items: "id, type, updatedAt, *tags",
       images: "id",
     });
+    this.version(2)
+      .stores({ items: "id, type, updatedAt, *tags, ocr.status", images: "id" })
+      .upgrade((tx) =>
+        tx
+          .table<LibraryItem>("items")
+          .toCollection()
+          .modify((item) => {
+            if (item.type === "image") item.ocr = pendingOcr();
+          }),
+      );
   }
 }
 export const db = new LibraryDB();

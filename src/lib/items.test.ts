@@ -18,7 +18,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await database.delete();
 });
-describe("version 1 library operations", () => {
+describe("library operations", () => {
   it.each(["image", "link", "text", "note"] as const)(
     "creates and persists a %s after reopening storage",
     async (type) => {
@@ -29,7 +29,7 @@ describe("version 1 library operations", () => {
       const item = await saveItem(input(type), image, undefined, database);
       database.close();
       await database.open();
-      expect(database.verno).toBe(1);
+      expect(database.verno).toBe(2);
       expect(await listItems(database)).toEqual([item]);
       expect(item.tags).toEqual(["work", "ideas"]);
       expect(item.id).toBeTruthy();

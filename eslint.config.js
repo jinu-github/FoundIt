@@ -4,9 +4,10 @@ import hooks from "eslint-plugin-react-hooks";
 import refresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 export default ts.config(
-  { ignores: ["dist", "node_modules"] },
+  { ignores: ["dist", "node_modules", "public/ocr"] },
   js.configs.recommended,
   ...ts.configs.recommended,
+  { files: ["scripts/*.mjs"], languageOptions: { globals: globals.node } },
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
