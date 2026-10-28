@@ -4,7 +4,7 @@ import hooks from "eslint-plugin-react-hooks";
 import refresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 export default ts.config(
-  { ignores: ["dist", "node_modules", "public/ocr"] },
+  { ignores: ["dist", "node_modules", "public/ocr", "test-results", "playwright-report"] },
   js.configs.recommended,
   ...ts.configs.recommended,
   { files: ["scripts/*.mjs"], languageOptions: { globals: globals.node } },

@@ -1,4 +1,4 @@
-# FoundIt — Phase 3
+# FoundIt — Phase 4
 
 A local-first Windows-friendly web library for screenshots/images, links, copied text, and notes, with local English OCR and full-text search. Built with React, TypeScript, Vite, Dexie, Tesseract.js, and MiniSearch. The project brief is preserved in `FOUNDIt.md`.
 
@@ -22,9 +22,9 @@ Use a current Windows Edge or Chrome browser with IndexedDB, Web Workers, WebAss
 
 `npm run dev` and `npm run build` automatically run `npm run prepare:ocr`. That script **only copies installed files** into ignored `public/ocr/`: the browser worker, all available WASM/core variants, and English trained data. It makes no network requests. Vite copies these assets into `dist/ocr/` during the build. If files are missing, preparation fails; it does not substitute a CDN. Run `npm ci` to restore missing dependencies and then retry preparation.
 
-At runtime, the app explicitly loads `/ocr/worker.min.js`, `/ocr/core/`, and `/ocr/lang/eng.traineddata.gz` from the same local origin. Tesseract's separate language cache is disabled; the reusable worker keeps the language loaded in memory for the current session. No remote fallback is configured. Keep the local server running even if disconnected from the internet.
+At runtime, the app explicitly loads `/ocr/worker.min.js`, `/ocr/core/`, and `/ocr/lang/eng.traineddata.gz` from the same local origin. Tesseract's separate language cache is disabled; the reusable worker keeps the language loaded in memory for the current session. No remote fallback is configured. For production offline operation, follow the Phase 4 preparation steps below; development still requires the local server.
 
-Vite development and preview servers send a Content Security Policy restricting scripts, workers, and connections to the same origin. Development additionally permits its local HMR WebSocket and uses a per-server-start nonce for Vite's inline initialization script. Production preview does not permit external connections or inline scripts. If serving `dist` with another server, preserve the policy from `vite.config.ts` on **both HTML and worker responses** and serve at the origin root. No PWA/offline cache or service worker is included.
+Vite development and preview servers send a Content Security Policy restricting scripts, workers, and connections to the same origin. Development additionally permits its local HMR WebSocket and uses a per-server-start nonce for Vite's inline initialization script. Production preview does not permit external connections or inline scripts. If serving `dist` with another server, preserve the policy from `vite.config.ts` on **both HTML and worker responses** and serve at the origin root. Production builds include the Phase 4 service worker described below.
 
 Always use the same browser profile and this exact origin. `localhost`, another port, private browsing, or another browser has separate storage. Strict port selection prevents silently starting at a different origin.
 
@@ -66,7 +66,7 @@ Use **Protect local storage** to request persistent storage where the browser su
 - Each OCR attempt has a two-minute deadline including decoding/initialization. A failure or timeout resets the worker for later jobs. Keep a tab open to process the queue; closing the app stops processing until reopening. Browser background throttling can slow recognition.
 - Full-text indexing/search runs in a separate worker with a short input debounce. Index memory and initial rebuild time grow with the library; this version does not promise unlimited library size.
 
-PWA installation/service workers, Android, desktop packaging, synchronization, accounts, and generative AI remain outside scope.
+Android, desktop packaging, synchronization, accounts, and generative AI remain outside scope.
 
 ## Verification
 
@@ -97,7 +97,7 @@ Manual acceptance checks in your preferred Windows browser:
 4. **Reload recovery:** reload while an image is processing. It should resume from pending and eventually finish. Reload completed items and confirm their text remains without another processing cycle. Delete a disposable image during OCR and confirm no late result recreates it.
 5. **Failure/retry:** use DevTools request blocking for the local English language asset, reload to discard the in-memory OCR worker, and import a disposable image. Confirm failure. Unblock the asset and click Retry OCR; confirm completion. Do not clear site storage for this check.
 6. **Local-only network:** run the production preview, open DevTools Network, enable Preserve log and Disable cache, then reload and import a new image. Worker, core/WASM and language requests must all be under `http://127.0.0.1:5173/ocr/`. The search worker must also be local. There should be no CDN, OCR API, analytics, or content-upload request. Open the worker response headers and confirm `connect-src 'self'` and `script-src 'self' 'wasm-unsafe-eval'`. Some core variants embed WASM in their `.wasm.js` file instead of making a separate `.wasm` request.
-7. **Internet independence:** with dependencies/assets already installed, disconnect external internet access while keeping the local server reachable, reload, and import a fresh screenshot. OCR and search should still work. Do not use DevTools' global Offline mode, which can also block required localhost asset requests.
+7. **Internet independence:** with dependencies/assets already installed, disconnect external internet access while keeping the local server reachable, reload, and import a fresh screenshot. OCR and search should still work. For development, avoid DevTools' global Offline mode. Production can use it after Phase 4 offline readiness is verified.
 
 During implementation, the production preview recognized the existing test screenshot under the same-origin-only policy, and searching an extracted-only word returned it. Local worker/core/language endpoints returned HTTP 200 with that policy. Broader OCR accuracy and full Windows browser-restart checks remain manual.
 
@@ -152,3 +152,48 @@ See [the versioned archive specification](docs/backup-format.md) for paths, sche
 
 Automated Phase 3 tests use real ZIP bytes and fake-indexeddb for round trips, exact image bytes/MIME, migration, conflicts, malformed/unsupported archives, CRC/SHA failures, quota/rollback, staging ownership, interrupted OCR tokens, local-only ZIP operations, UI outcomes and editor-draft preservation. Real browser file-picker, multi-process storage durability, disk usage, and memory limits remain manual checks.
 A production-build smoke test in an isolated Chrome profile verified a synthetic note/image ZIP export, empty-library restore, repeat-merge skips, renewed OCR job IDs, completed OCR preservation, reload persistence, OCR-text search, and zero external runtime requests. It exercised the download fallback; the native Save File picker and larger libraries still need the checks above.
+
+## Phase 4: installable Windows PWA
+
+Stop the development server, run `npm run build`, then `npm run preview`. Open **http://127.0.0.1:5173/** in the same Windows Chrome profile you already use. Do not change to localhost, another port, or another profile for your working library. No database migration is introduced in Phase 4; the existing IndexedDB library remains in place.
+
+1. Keep the local server running while **Preparing offline files** is shown. The production service worker precaches the app shell, every generated application chunk (including lazy backup code and the search worker), icons, and all local OCR worker/core/WASM/English language assets: approximately 54 MiB. The per-file ceiling is 16 MiB; the largest current file is approximately 10.42 MiB. A build audit rejects omissions and oversized files.
+2. On the first visit, **Offline files prepared** asks you to save your work and reopen the page. The worker deliberately does not take over existing pages. After reopening, wait for **Offline files verified**. This checks that this build's exact required cache entries exist and the page is controlled by a worker. Installation and `navigator.onLine` alone are not evidence of readiness. The check runs on lifecycle events, window focus, and **Check offline files**; it is a point-in-time check, not a guarantee against later eviction.
+3. Use Chrome's address-bar install action or menu option to install FoundIt (wording varies by Chrome version). It opens in a standalone window. Installation does not copy or migrate your data. Windows installation UI and OS integration require a manual check.
+4. Once verified, the app can reopen and perform OCR, search, and backup/restore with the network disabled and the local server stopped. A first visit without cached files still requires the server. If preparation fails, keep the server running, check free storage, and retry. Unavailable service workers or Cache Storage mean offline mode is unavailable.
+
+### Updates and recovery
+
+Build updates locally and restart `npm run preview` at the same origin. **Check offline files** also asks the browser to check for an update. The existing version continues to run while a new worker prepares its complete cache. When **Update ready** appears, save edits and finish or cancel backup/restore, close **every** FoundIt tab and installed window, then reopen. There is no forced activation, automatic reload, or editor reset. An open tab can keep an update waiting indefinitely. Failed update preparation does not replace the working worker; the UI reports the failure.
+
+If files have been evicted, start the local server and check again. An unchanged worker may not repopulate missing precache entries automatically. If it stays unverified, export a backup while the library is available. Save work and finish backup/restore. In Chrome DevTools → Application → Service Workers, unregister only the worker at this origin; in Cache Storage remove only caches starting `foundit-pwa-precache-`. Close all FoundIt windows, restart the local production server, reopen, and prepare again. **Do not use Clear site data, delete IndexedDB, or remove the browser profile**: these can delete your library. Failed cache recovery never requires a database reset.
+
+Installation and service workers cannot prevent browser data deletion. Browser eviction, disk failures, profile removal, and clearing site data can lose the library or offline files. Continue exporting backups. Backups remain **unencrypted** and must be stored securely outside browser storage.
+
+### Tooling, privacy, and automated checks
+
+`vite-plugin-pwa` **2.0.0** explicitly supports Vite 8 and generates Workbox's service worker. `@playwright/test` **1.64.1** supplies isolated Chrome tests. Both are exact development dependency pins; React, Vite, and TypeScript were not upgraded. npm installation requires development-time network access. Build and asset preparation use installed local packages. No CDN or runtime external service is used. Cache Storage contains only an explicit build inventory of application/OCR resources; library items, imported images, backups, arbitrary URLs, and search indexes are never added by the worker. The CSP is preserved. No schema change is made.
+
+Service workers are disabled in development. Use a separate disposable Chrome profile for development if your normal profile has a production worker at this origin, to avoid the production worker serving old files over the development server. Keep the working-library profile on the production preview.
+
+```powershell
+npm run typecheck
+npm run lint
+npm run test -- --run
+npm run build
+npm run check:pwa
+npm run test:pwa
+```
+
+The production-browser suite requires installed Google Chrome and port 5173 to be free; stop your preview/dev server first. It launches a test-only static server with the production CSP and isolated browser contexts, never your existing Chrome profile. It does not reuse another server. Browser downloads are not required. Generated reports, temporary fault controls, and browser artifacts are ignored by Git. Tests use synthetic data. They cover offline launch, notes/search, offline export/empty restore/merge, a waiting worker preserving an unsaved draft, failed-install recovery, real English OCR offline, OCR reload persistence, missing-cache detection, and external-request checks. The update test changes the worker bytes to exercise the native lifecycle; a full application-version upgrade remains a manual check. Existing unit tests retain database, OCR, search, atomic restore, and draft coverage.
+
+### Phase 4 manual checklist
+
+- In Windows Chrome at the exact origin, inspect DevTools → Application → Manifest and Service Workers for errors; install and check the icon, app name, standalone window, and Start menu launch.
+- Wait for **Offline files verified**, stop the local server, disable network access, close/reopen the installed app, and reload. Verify existing images and all four item types; add/edit/delete disposable items.
+- Import a new clear screenshot offline. Compare actual OCR accuracy and search an OCR-only word. Check that results and images survive a browser restart. Observe Network for local cached OCR assets and no external requests.
+- Offline, export a backup and validate/restore/merge it using disposable data. Check original images, conflict counts, and unsaved drafts. Test the native Windows Save File picker, which headless tests replace with the download fallback.
+- With a saved backup, serve a new production build while an editor has a draft and another tab has a restore preview. Confirm nothing reloads or loses work; save/cancel deliberately, close all tabs/windows, reopen, and verify existing items, OCR, search, and backup behavior.
+- In a disposable profile only, simulate a missing OCR file or insufficient cache space. Confirm preparation fails honestly and the existing library is intact. Exercise the selective worker/cache recovery procedure without clearing IndexedDB.
+
+These checks do not guarantee unlimited storage, OCR accuracy, OS installation integration, or durability under every browser/disk failure. Android, desktop wrappers, cloud sync, accounts, telemetry, AI, and future phases remain out of scope.

@@ -676,3 +676,6 @@ footer {
 .backup-actions label { display: grid; gap: .4rem; max-width: 100%; }
 .backup-actions input, .backup-actions select { max-width: 100%; }
 .backup-conflicts { max-height: 12rem; overflow: auto; overflow-wrap: anywhere; }
+
+.pwa-status { padding: .75rem 1.5rem; border-top: 1px solid #d9ddd5; font-size: .85rem; background: #fafaf7; }
+.pwa-status button { margin-left: .75rem; }
