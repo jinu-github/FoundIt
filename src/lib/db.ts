@@ -4,6 +4,11 @@ import { pendingOcr } from "./types";
 export class LibraryDB extends Dexie {
   items!: Table<LibraryItem, string>;
   images!: Table<ImageRecord, string>;
+  restoreItems!: Table<{ id: string; item: LibraryItem; blob?: Blob }, string>;
+  restoreSessions!: Table<
+    { id: string; count: number; validated: boolean },
+    string
+  >;
   constructor(name = "foundit-library") {
     super(name);
     this.version(1).stores({
@@ -20,6 +25,12 @@ export class LibraryDB extends Dexie {
             if (item.type === "image") item.ocr = pendingOcr();
           }),
       );
+    this.version(3).stores({
+      items: "id, type, updatedAt, *tags, ocr.status",
+      images: "id",
+      restoreItems: "id",
+      restoreSessions: "id",
+    });
   }
 }
 export const db = new LibraryDB();

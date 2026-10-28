@@ -29,7 +29,7 @@ describe("library operations", () => {
       const item = await saveItem(input(type), image, undefined, database);
       database.close();
       await database.open();
-      expect(database.verno).toBe(2);
+      expect(database.verno).toBe(3);
       expect(await listItems(database)).toEqual([item]);
       expect(item.tags).toEqual(["work", "ideas"]);
       expect(item.id).toBeTruthy();

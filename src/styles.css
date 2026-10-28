@@ -667,3 +667,12 @@ footer {
     text-align: right;
   }
 }
+
+.backup-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #dce2dd); border-radius: 12px; background: var(--surface, #fff); }
+.backup-panel > summary { cursor: pointer; font-weight: 650; }
+.backup-panel p { line-height: 1.5; }
+.backup-limits { font-size: .85rem; color: #59665e; }
+.backup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+.backup-actions label { display: grid; gap: .4rem; max-width: 100%; }
+.backup-actions input, .backup-actions select { max-width: 100%; }
+.backup-conflicts { max-height: 12rem; overflow: auto; overflow-wrap: anywhere; }

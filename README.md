@@ -1,4 +1,4 @@
-# FoundIt — Phase 2
+# FoundIt — Phase 3
 
 A local-first Windows-friendly web library for screenshots/images, links, copied text, and notes, with local English OCR and full-text search. Built with React, TypeScript, Vite, Dexie, Tesseract.js, and MiniSearch. The project brief is preserved in `FOUNDIt.md`.
 
@@ -47,7 +47,7 @@ npm run preview
 
 ## Local storage and privacy
 
-IndexedDB database `foundit-library` uses schema version 2. `items` contains metadata with UUIDs and creation/update timestamps; `images` contains one original Blob per image ID. Saving and deleting use a single transaction spanning both tables, so a failed image write/delete rolls back its metadata operation. Editing image metadata retains the existing blob and OCR result.
+IndexedDB database `foundit-library` uses schema version 3. `items` contains metadata with UUIDs and creation/update timestamps; `images` contains one original Blob per image ID. Saving and deleting use a single transaction spanning both tables, so a failed image write/delete rolls back its metadata operation. Editing image metadata retains the existing blob and OCR result.
 
 The version 1 → 2 migration adds pending OCR metadata to existing images and an OCR status index. It preserves original blobs, IDs, titles, notes, tags, and timestamps; non-image records are unchanged. Recognition starts after the migration transaction commits. Close other old-version tabs if they block an upgrade. Schema upgrades do not implement backup or restore.
 
@@ -55,7 +55,7 @@ OCR text/status are persisted in each image's metadata. Search indexes exist onl
 
 No backend API, account, cloud service, external fonts, analytics, telemetry, or AI is included. Saved content is rendered as text; URLs are limited to HTTP(S) without embedded credentials. Links open only when clicked, in a separate tab without a referrer/opener. Temporary image object URLs are revoked on unmount.
 
-Use **Protect local storage** to request persistent storage where the browser supports it. A browser may deny this request. Clearing site data, deleting the browser profile, or using private browsing can still lose data. **There is no backup/restore yet.** Multiple tabs share database updates; only one holds the OCR processing lock. Avoid editing the same item simultaneously in multiple tabs: the last manual save wins. Canceling or switching away from an editor discards unsaved changes.
+Use **Protect local storage** to request persistent storage where the browser supports it. A browser may deny this request. Clearing site data, deleting the browser profile, or using private browsing can still lose data. **Export backups regularly using Backup and restore.** Multiple tabs share database updates; only one holds the OCR processing lock. Avoid editing the same item simultaneously in multiple tabs: the last manual save wins. Canceling or switching away from an editor discards unsaved changes.
 
 ## OCR behavior and limitations
 
@@ -66,7 +66,7 @@ Use **Protect local storage** to request persistent storage where the browser su
 - Each OCR attempt has a two-minute deadline including decoding/initialization. A failure or timeout resets the worker for later jobs. Keep a tab open to process the queue; closing the app stops processing until reopening. Browser background throttling can slow recognition.
 - Full-text indexing/search runs in a separate worker with a short input debounce. Index memory and initial rebuild time grow with the library; this version does not promise unlimited library size.
 
-Backup/restore, PWA installation/service workers, Android, desktop packaging, synchronization, accounts, and generative AI remain outside scope.
+PWA installation/service workers, Android, desktop packaging, synchronization, accounts, and generative AI remain outside scope.
 
 ## Verification
 
@@ -100,3 +100,55 @@ Manual acceptance checks in your preferred Windows browser:
 7. **Internet independence:** with dependencies/assets already installed, disconnect external internet access while keeping the local server reachable, reload, and import a fresh screenshot. OCR and search should still work. Do not use DevTools' global Offline mode, which can also block required localhost asset requests.
 
 During implementation, the production preview recognized the existing test screenshot under the same-origin-only policy, and searching an extracted-only word returned it. Local worker/core/language endpoints returned HTTP 200 with that policy. Broader OCR accuracy and full Windows browser-restart checks remain manual.
+
+## Phase 3: local backup and restore
+
+Open **Backup and restore** above the search bar. Exports include all saved item types, tags, notes/text, URLs, timestamps, original images, and OCR results/status. Unsaved editor drafts are not included and remain open during backup operations.
+
+**Backups are unencrypted.** Anyone with the ZIP can read your private content. Store it securely, outside browser site storage, and keep a known-good copy before reorganizing or clearing data. Checksums detect damage; they do not prove a backup came from a trusted source. Export is manual, not an automatic or cloud backup.
+
+### Export
+
+1. Click **Export backup**. On supported Edge/Chrome versions, choose the local destination in the Save File picker; the ZIP is streamed to that file.
+2. If the picker is unavailable, a regular download is offered instead. Confirm that the file actually appears in your downloads; the app cannot verify that you kept it.
+3. Keep the ZIP unchanged. This version writes ZIP STORE entries (no compression); recompressing or password-protecting it makes it unsupported for restore.
+
+The export captures a consistent snapshot of saved data. Edits and OCR finishing later are not included until another export. Completed OCR text is preserved. A processing job is recorded as processing and will safely return to pending when restored.
+
+### Restore or merge
+
+1. Choose a `.zip` using **Choose backup to validate**. Validation checks every entry, checksum, metadata field, and image reference before offering Restore. Nothing is inserted into the live library during validation.
+2. Review the counts and list of conflicting IDs. **Merge** adds new IDs and skips existing IDs, keeping their current content even if the backup version differs. Backup versions of skipped IDs are not restored. Different IDs remain separate even if their content is identical.
+3. Select **Restore into empty library** only when the library is empty. It never clears or replaces existing data. Otherwise use Merge.
+4. Click **Restore validated backup**, or **Cancel restore**. Final counts are recalculated because another tab may have added/deleted items since the preview. A failed final transaction leaves the live library unchanged. You can retry or cancel after resolving a storage error.
+5. Check the final skipped-ID list, search restored items, and verify image previews. Completed OCR is reused; failed OCR keeps its retry option. Interrupted processing jobs receive fresh tokens and can resume.
+
+Restore requires Web Locks (current Edge/Chrome). Only one tab may hold a restore session per library. Finish/cancel its preview, or close that tab, before starting in another. The app never times out another tab's staging data. If a tab crashes or closes, its browser lock is released and the next restore session cleans abandoned staging before validation. Cleanup failure may leave temporary storage behind until a later successful session; it does not expose staged items to OCR/search.
+
+### Limits, storage, and setup
+
+- ZIP import/export limit: 512 MiB; download fallback: 128 MiB. Export reserves 3 MiB for manifest/headers, reducing the payload budget.
+- At most 5,000 items, 16 MiB of item metadata (including OCR text), and 2 MiB of manifest data. Existing per-item field and 10 MiB image limits still apply. Excess data is rejected, never truncated or silently omitted.
+- Restore requires temporary staging storage plus room for the final data and IndexedDB's transaction overhead. Browser quota and memory behavior vary. Close unnecessary tabs and retain the backup file if storage runs out; do not clear your only library to make space.
+- Original image buffers are handled sequentially; export retains a snapshot of Blob references. Browser implementations may still use substantial memory. Representative large-library testing remains necessary.
+- `npm ci` downloads the pinned `@zip.js/zip.js` package during development/setup. Backup and restore operate entirely locally at runtime, with ZIP compression and ZIP workers disabled. They do not fetch remote codecs, use an API, or relax the existing Content Security Policy.
+- IndexedDB upgrades from v2 to v3 add only two temporary staging stores; existing items, images, OCR and indexes are preserved. The search index remains rebuildable from live items.
+
+See [the versioned archive specification](docs/backup-format.md) for paths, schema, validation rules, restore transaction boundaries, and concurrency details. No encryption, cloud storage, Android, desktop packaging, or later phase is included.
+
+### Phase 3 manual checklist
+
+1. Export a library containing all four item types, tags, URLs, images, completed/failed/pending OCR. Verify that a ZIP is actually saved. Open its manifest and confirm originals are present. Keep this backup safe.
+2. Use a separate disposable browser profile at the same origin to restore into an empty library. Compare image originals, tags, notes, OCR text, and timestamps, then reload and search for an OCR-only term. Do not clear your working library for testing.
+3. Import the same archive again using Merge. All existing IDs should be skipped. Edit an item first and confirm the merge leaves the edit intact. Compare preview and final conflict lists.
+4. While an editor contains an unsaved draft, export and merge a backup with new IDs. Confirm the draft remains untouched and restored items become searchable. Save the draft normally afterward.
+5. Open two tabs. Leave a validated restore preview in one; starting a restore in the other must report that the library is busy without deleting staging. Close the first tab, then retry in the second; abandoned staging should be cleaned safely.
+6. Close/reload a tab during validation. Reopen and verify that no partially restored items appear. Repeat during final commit with disposable data: the result must be all accepted items or none, never orphan metadata/images.
+7. Try a truncated ZIP, unsupported archive version, altered image bytes, and an unrelated ZIP. Each must fail before changing live data. Test a quota failure in a disposable profile if feasible; compare the library before and after.
+8. With an image processing, export; delete that disposable image and restore the backup. Confirm old OCR work does not overwrite the restored job. Completed OCR should remain completed after restore/reload.
+9. Try Save File export and (where unavailable) the download fallback. Cancel the picker; simulate a failed file write if feasible. Neither should claim a successful saved backup.
+10. In production preview with DevTools Network open, export and restore after disconnecting external internet access. Only existing local app/OCR assets may load; no external requests should occur. Keep the local server reachable.
+11. Exercise a representative large library below the documented limits, checking progress, responsiveness, disk space, and the ability to cancel at the preview. Validation/commit cannot be canceled midway through the panel; closing the tab interrupts work with the recovery guarantees above.
+
+Automated Phase 3 tests use real ZIP bytes and fake-indexeddb for round trips, exact image bytes/MIME, migration, conflicts, malformed/unsupported archives, CRC/SHA failures, quota/rollback, staging ownership, interrupted OCR tokens, local-only ZIP operations, UI outcomes and editor-draft preservation. Real browser file-picker, multi-process storage durability, disk usage, and memory limits remain manual checks.
+A production-build smoke test in an isolated Chrome profile verified a synthetic note/image ZIP export, empty-library restore, repeat-merge skips, renewed OCR job IDs, completed OCR preservation, reload persistence, OCR-text search, and zero external runtime requests. It exercised the download fallback; the native Save File picker and larger libraries still need the checks above.

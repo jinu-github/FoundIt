@@ -57,7 +57,9 @@ it("keeps an unsaved draft when OCR completes and searches the saved result", as
   );
   const user = userEvent.setup();
   render(<App />);
-  await user.click(await screen.findByRole("button", { name: /OCR: pending Image Original/i }));
+  await user.click(
+    await screen.findByRole("button", { name: /OCR: pending Image Original/i }),
+  );
   await user.click(screen.getByRole("button", { name: "Edit item" }));
   await user.clear(screen.getByLabelText("Title"));
   await user.type(screen.getByLabelText("Title"), "My unsaved title");
@@ -125,5 +127,56 @@ it("shows storage read failures and lets the user retry", async () => {
   await waitFor(() =>
     expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
   );
+  spy.mockRestore();
+});
+
+it("preserves an unsaved editor draft while a restore adds searchable items", async () => {
+  const backup = await import("./lib/backup");
+  const added = { total: 1, added: 1, skipped: [] };
+  const close = vi.fn(async () => {});
+  const spy = vi.spyOn(backup, "openRestore").mockResolvedValue({
+    validate: async () => added,
+    commit: async () => {
+      await saveItem({
+        type: "note",
+        title: "Restored quartz",
+        textContent: "Restored content",
+        tags: [],
+        url: "",
+      });
+      return added;
+    },
+    close,
+  });
+  await saveItem({
+    type: "note",
+    title: "Existing note",
+    textContent: "Saved content",
+    tags: [],
+    url: "",
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(
+    await screen.findByRole("button", { name: /Existing note Saved content/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "Edit item" }));
+  await user.clear(screen.getByLabelText("Title"));
+  await user.type(screen.getByLabelText("Title"), "Unsaved draft");
+  await user.click(screen.getByText("Backup and restore"));
+  await user.upload(
+    screen.getByLabelText("Choose backup to validate"),
+    new File(["zip"], "backup.zip", { type: "application/zip" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Restore validated backup" }),
+  );
+  await screen.findByText(/Restore committed/);
+  expect(screen.getByLabelText("Title")).toHaveValue("Unsaved draft");
+  await user.type(screen.getByRole("searchbox"), "quartz");
+  expect(
+    await screen.findByRole("button", { name: /Restored quartz/ }),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Title")).toHaveValue("Unsaved draft");
   spy.mockRestore();
 });

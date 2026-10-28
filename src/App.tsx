@@ -15,6 +15,7 @@ import ItemForm from "./components/ItemForm";
 import ItemList from "./components/ItemList";
 import { symbols } from "./lib/types";
 import ItemDetails from "./components/ItemDetails";
+import BackupPanel from "./components/BackupPanel";
 export default function App() {
   const { items, loading, error: storageError, reload } = useLibrary();
   const ocrError = useOcr();
@@ -121,8 +122,8 @@ export default function App() {
           <span className="local-badge">● LOCAL BY DESIGN</span>
           <p>Your collection stays in this browser on this device.</p>
           <small>
-            Clearing site data may delete your library. There is no backup in
-            this version.
+            Clearing site data may delete your library. Export a backup to keep
+            a separate copy of saved items.
           </small>
           <button
             className="storage-button"
@@ -173,6 +174,7 @@ export default function App() {
             ＋ Add item
           </button>
         </header>
+        <BackupPanel />
         <div className="search-bar">
           <label>
             Search your library
